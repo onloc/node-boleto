@@ -6,7 +6,7 @@ var helper = require("./helper");
 exports.options = {
   logoURL:
     "https://github.com/onloc/assets/blob/ab8f1b6e9288eee8433c703fcf00b032419ef3a9/banco-safra-boleto.png?raw=true",
-  codigo: "477",
+  codigo: "422",
 };
 
 exports.dvBarra = function (numeroStr) {
