@@ -1,145 +1,193 @@
-const moment = require('moment')
-var formatters = require('../../lib/formatters')
-var ediHelper = require('../../lib/edi-helper')
-var helper = require('./helper')
+const moment = require("moment");
+var formatters = require("../../lib/formatters");
+var ediHelper = require("../../lib/edi-helper");
+var helper = require("./helper");
 
 exports.options = {
-  logoURL: 'https://github.com/BoletoNet/boleto2net/blob/master/Boleto2.Net/Imagens/422.jpg?raw=true',
-  codigo: '033'
-}
+  logoURL:
+    "https://github.com/onloc/assets/blob/ab8f1b6e9288eee8433c703fcf00b032419ef3a9/banco-safra-boleto.png?raw=true",
+  codigo: "477",
+};
 
-exports.dvBarra = function (barra) {
-  var resto2 = formatters.mod11(barra, 9, 1)
-  return (resto2 == 0 || resto2 == 1 || resto2 == 10) ? 1 : 11 - resto2
-}
+exports.dvBarra = function (numeroStr) {
+  // Inicializa variáveis para o cálculo do DV
+  let soma = 0;
+  let peso = 2;
+
+  // Percorre os dígitos do número da direita para a esquerda
+  for (let i = numeroStr.length - 1; i >= 0; i--) {
+    let digito = parseInt(numeroStr[i], 10);
+
+    // Multiplica o dígito pelo peso atual e adiciona à soma
+    let resultadoParcial = digito * peso;
+
+    // Se o resultado parcial for maior que 9, soma os dígitos individuais
+    if (resultadoParcial > 9) {
+      resultadoParcial =
+        Math.floor(resultadoParcial / 10) + (resultadoParcial % 10);
+    }
+
+    soma += resultadoParcial;
+
+    // Alterna o peso entre 2 e 1
+    peso = peso === 2 ? 1 : 2;
+  }
+
+  // Calcula o dígito verificador
+  const dv = (10 - (soma % 10)) % 10;
+
+  return dv;
+};
 
 exports.barcodeData = function (boleto) {
-  var codigoBanco = this.options.codigo
-  var numMoeda = '9'
-  var fixo = '9' // Numero fixo para a posição 05-05
-  var ios = '0' // IOS - somente para Seguradoras (Se 7% informar 7, limitado 9%) - demais clientes usar 0
+  var codigoBanco = this.options.codigo;
+  var numMoeda = "9";
 
-  var fatorVencimento = formatters.fatorVencimento(moment(boleto['data_vencimento']).utc().format())
+  var fatorVencimento = formatters.fatorVencimento(
+    moment(boleto["data_vencimento"]).utc().format()
+  );
 
-  var valor = formatters.addTrailingZeros(boleto['valor'], 10)
-  var carteira = boleto['carteira']
-  var codigoCedente = formatters.addTrailingZeros(boleto['codigo_cedente'], 7)
+  var agencia = formatters.addTrailingZeros(boleto["agencia"], 4);
 
-  var nossoNumero = formatters.addTrailingZeros(boleto['nosso_numero'], 12) + formatters.mod11(boleto['nosso_numero'])
+  var valor = formatters.addTrailingZeros(boleto["valor"], 10);
+  var carteira = boleto["carteira"];
+  var codigoCedente = formatters.addTrailingZeros(boleto["codigo_cedente"], 7);
 
-  var barra = codigoBanco + numMoeda + fatorVencimento + valor + fixo + codigoCedente + nossoNumero + ios + carteira
+  var nossoNumero =
+    carteira + formatters.addTrailingZeros(boleto["nosso_numero"], 11);
 
-  var dvBarra = this.dvBarra(barra)
-  var lineData = barra.substring(0, 4) + dvBarra + barra.substring(4, barra.length)
+  var barra =
+    codigoBanco +
+    numMoeda +
+    fatorVencimento +
+    valor +
+    agencia +
+    nossoNumero +
+    codigoCedente +
+    "0";
 
-  return lineData
-}
+  var dvBarra = this.dvBarra(barra);
+  var lineData =
+    barra.substring(0, 4) + dvBarra + barra.substring(4, barra.length);
+
+  return lineData;
+};
 
 exports.linhaDigitavel = function (barcodeData) {
-  // Posição   Conteúdo
-  // 1 a 3    Número do banco
-  // 4        Código da Moeda - 9 para Real ou 8 - outras moedas
-  // 5        Fixo "9'
-  // 6 a 9    PSK - codigo cliente (4 primeiros digitos)
-  // 10 a 12  Restante do PSK (3 digitos)
-  // 13 a 19  7 primeiros digitos do Nosso Numero
-  // 20 a 25  Restante do Nosso numero (8 digitos) - total 13 (incluindo digito verificador)
-  // 26 a 26  IOS
-  // 27 a 29  Tipo Modalidade Carteira
-  // 30 a 30  Dígito verificador do código de barras
-  // 31 a 34  Fator de vencimento (qtdade de dias desde 07/10/1997 até a data de vencimento)
-  // 35 a 44  Valor do título
+  var campos = [];
 
-  var campos = []
+  var codigoBanco = barcodeData.substr(0, 3);
+  var numMoeda = barcodeData.substr(3, 1);
+  var fixo = barcodeData.substr(19, 1);
+  var agencia = barcodeData.substr(20, 4);
+  var agenciaDig = barcodeData.substr(21, 1);
+  var codigoCedente = barcodeData.substr(25, 9);
+  var numeroDoc = barcodeData.substr(34, 9);
+  var secFixo = barcodeData.substr(43, 1);
+  var dac = barcodeData.substr(4, 1);
+  var fatorVencimento = barcodeData.substr(5, 4);
+  var valor = barcodeData.substr(9, 10);
 
-  // 1. Primeiro Grupo - composto pelo código do banco, código da moéda, Valor Fixo "9"
-  // e 4 primeiros digitos do PSK (codigo do cliente) e DV (modulo10) deste campo
-  var campo = barcodeData.substring(0, 3) + barcodeData.substring(3, 4) + barcodeData.substring(19, 20) + barcodeData.substring(20, 24)
-  campo = campo + formatters.mod10(campo)
-  campo = campo.substring(0, 5) + '.' + campo.substring(5, campo.length)
-  campos.push(campo)
+  var dvRef1 = codigoBanco + numMoeda + fixo + agencia;
+  var dv1 = this.dvBarra(dvRef1);
 
-  // 2. Segundo Grupo - composto pelas 3 últimas posiçoes do PSK e 7 primeiros dígitos do Nosso Número
-  // e DV (modulo10) deste campo
-  campo = barcodeData.substring(24, 34)
-  campo = campo + formatters.mod10(campo)
-  campo = campo.substring(0, 5) + '.' + campo.substring(5, campo.length)
-  campos.push(campo)
+  var dvRef2 = agenciaDig + codigoCedente;
+  var dv2 = this.dvBarra(dvRef2);
 
-  // 3. Terceiro Grupo - Composto por : Restante do Nosso Numero (6 digitos), IOS, Modalidade da Carteira
-  // e DV (modulo10) deste campo
-  campo = barcodeData.substring(34, 44)
-  campo = campo + formatters.mod10(campo)
-  campo = campo.substring(0, 5) + '.' + campo.substring(5, campo.length)
-  campos.push(campo)
+  var dvRef3 = numeroDoc + secFixo;
+  var dv3 = this.dvBarra(dvRef3);
 
-  // 4. Campo - digito verificador do codigo de barras
-  campo = barcodeData.substring(4, 5)
-  campos.push(campo)
+  campos.push(codigoBanco + numMoeda + fixo + "." + agencia.substr(0, 4) + dv1);
+  campos.push(
+    agencia.substr(3, 1) +
+      codigoCedente.substr(0, 4) +
+      "." +
+      codigoCedente.substr(4, 5) +
+      dv2
+  );
 
-  // 5. Campo composto pelo fator vencimento e valor nominal do documento, sem
-  // indicacao de zeros a esquerda e sem edicao (sem ponto e virgula). Quando se
-  // tratar de valor zerado, a representacao deve ser 0000000000 (dez zeros).
-  campo = barcodeData.substring(5, 9) + barcodeData.substring(9, 19)
-  campos.push(campo)
-
-  return campos.join(' ')
-}
+  campos.push(
+    numeroDoc.substr(0, 5) + "." + numeroDoc.substr(5, 4) + secFixo + dv3
+  );
+  campos.push(dac);
+  campos.push(fatorVencimento + valor);
+  return campos.join(" ");
+};
 
 exports.parseEDIFile = function (fileContent) {
   try {
-    var lines = fileContent.split('\n')
+    var lines = fileContent.split("\n");
     var parsedFile = {
-      boletos: {}
-    }
+      boletos: {},
+    };
 
-    var currentNossoNumero = null
+    var currentNossoNumero = null;
 
     for (var i = 0; i < lines.length; i++) {
-      var line = lines[i]
-      var registro = line.substring(7, 8)
+      var line = lines[i];
+      var registro = line.substring(7, 8);
 
-      if (registro == '0') {
-        parsedFile['cnpj'] = line.substring(17, 32)
-        parsedFile['razao_social'] = line.substring(72, 102)
-        parsedFile['agencia_cedente'] = line.substring(32, 36)
-        parsedFile['conta_cedente'] = line.substring(37, 47)
-        parsedFile['data_arquivo'] = helper.dateFromEdiDate(line.substring(143, 152))
-      } else if (registro == '3') {
-        var segmento = line.substring(13, 14)
+      if (registro == "0") {
+        parsedFile["cnpj"] = line.substring(17, 32);
+        parsedFile["razao_social"] = line.substring(72, 102);
+        parsedFile["agencia_cedente"] = line.substring(32, 36);
+        parsedFile["conta_cedente"] = line.substring(37, 47);
+        parsedFile["data_arquivo"] = helper.dateFromEdiDate(
+          line.substring(143, 152)
+        );
+      } else if (registro == "3") {
+        var segmento = line.substring(13, 14);
 
-        if (segmento == 'T') {
-          var boleto = {}
+        if (segmento == "T") {
+          var boleto = {};
 
-          boleto['codigo_ocorrencia'] = line.substring(15, 17)
-          boleto['vencimento'] = formatters.dateFromEdiDate(line.substring(69, 77))
-          boleto['valor'] = formatters.removeTrailingZeros(line.substring(77, 92))
-          boleto['tarifa'] = formatters.removeTrailingZeros(line.substring(193, 208))
-          boleto['banco_recebedor'] = formatters.removeTrailingZeros(line.substring(92, 95))
-          boleto['agencia_recebedora'] = formatters.removeTrailingZeros(line.substring(95, 100))
+          boleto["codigo_ocorrencia"] = line.substring(15, 17);
+          boleto["vencimento"] = formatters.dateFromEdiDate(
+            line.substring(69, 77)
+          );
+          boleto["valor"] = formatters.removeTrailingZeros(
+            line.substring(77, 92)
+          );
+          boleto["tarifa"] = formatters.removeTrailingZeros(
+            line.substring(193, 208)
+          );
+          boleto["banco_recebedor"] = formatters.removeTrailingZeros(
+            line.substring(92, 95)
+          );
+          boleto["agencia_recebedora"] = formatters.removeTrailingZeros(
+            line.substring(95, 100)
+          );
 
-          currentNossoNumero = formatters.removeTrailingZeros(line.substring(40, 52))
-          parsedFile.boletos[currentNossoNumero] = boleto
-        } else if (segmento == 'U') {
-          parsedFile.boletos[currentNossoNumero]['valor_pago'] = formatters.removeTrailingZeros(line.substring(77, 92))
+          currentNossoNumero = formatters.removeTrailingZeros(
+            line.substring(40, 52)
+          );
+          parsedFile.boletos[currentNossoNumero] = boleto;
+        } else if (segmento == "U") {
+          parsedFile.boletos[currentNossoNumero]["valor_pago"] =
+            formatters.removeTrailingZeros(line.substring(77, 92));
 
-          var paid = parsedFile.boletos[currentNossoNumero]['valor_pago'] >= parsedFile.boletos[currentNossoNumero]['valor']
-          paid = paid && parsedFile.boletos[currentNossoNumero]['codigo_ocorrencia'] == '17'
+          var paid =
+            parsedFile.boletos[currentNossoNumero]["valor_pago"] >=
+            parsedFile.boletos[currentNossoNumero]["valor"];
+          paid =
+            paid &&
+            parsedFile.boletos[currentNossoNumero]["codigo_ocorrencia"] == "17";
 
-          boleto = parsedFile.boletos[currentNossoNumero]
+          boleto = parsedFile.boletos[currentNossoNumero];
 
-          boleto['pago'] = paid
-          boleto['edi_line_number'] = i
-          boleto['edi_line_checksum'] = ediHelper.calculateLineChecksum(line)
-          boleto['edi_line_fingerprint'] = boleto['edi_line_number'] + ':' + boleto['edi_line_checksum']
+          boleto["pago"] = paid;
+          boleto["edi_line_number"] = i;
+          boleto["edi_line_checksum"] = ediHelper.calculateLineChecksum(line);
+          boleto["edi_line_fingerprint"] =
+            boleto["edi_line_number"] + ":" + boleto["edi_line_checksum"];
 
-          currentNossoNumero = null
+          currentNossoNumero = null;
         }
       }
     }
 
-    return parsedFile
+    return parsedFile;
   } catch (e) {
-    return null
+    return null;
   }
-}
+};
