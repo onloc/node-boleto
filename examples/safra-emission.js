@@ -21,7 +21,7 @@ var boleto = new Boleto({
   'local_de_pagamento': 'Pagável em qualquer Banco do sistema de compensação.',
   'instrucoes': 'Sr. Caixa, aceitar o pagamento e não cobrar juros após o vencimento.',
   //'barcode': '42295946200000250227124000085544404180276562'
-  barcode: '42299706400000629987999990099999991234567892'
+  barcode: '42297124030008554440104850000227994790000026644'
 })
 
 // console.log(boleto['linha_digitavel']);
