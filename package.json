@@ -1,6 +1,6 @@
 {
   "name": "node-boleto",
-  "version": "2.2.6",
+  "version": "2.2.7",
   "description": "Boleto generator in Node.js",
   "main": "index.js",
   "scripts": {
